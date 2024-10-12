@@ -30,11 +30,11 @@ if not api_key:
 client = OpenAI(api_key=api_key)
 
 # Constants
-MAX_TOTAL_TOKENS = 2048   # Adjust based on OpenAI's token limit per request
-RETRY_LIMIT = 3
-RETRY_BACKOFF_FACTOR = 2  # Exponential backoff factor
+MAX_TOTAL_TOKENS = 4096   # Adjust based on OpenAI's token limit per request
 MAX_REFINEMENT_ATTEMPTS = 3
 MAX_CHAT_HISTORY_TOKENS = 4096  # Max tokens for the chat mode
+RETRY_LIMIT = 3
+RETRY_BACKOFF_FACTOR = 2  # Exponential backoff factor
 
 # Load agent configurations from JSON file
 AGENTS_CONFIG_FILE = 'agents.json'
@@ -55,6 +55,62 @@ def load_agents_config():
         logging.error(f"Error parsing '{AGENTS_CONFIG_FILE}': {e}")
         return []
 
+# Shared system message function
+def get_shared_system_message():
+    """
+    Returns a shared system message to be used by all agents.
+    """
+    system_message = """
+Your name is AI Assistant. You are a highly knowledgeable AI language model developed to assist users with a wide range of tasks, including answering questions, providing explanations, and offering insights across various domains.
+
+As an AI, you possess in-depth understanding in fields such as:
+
+1. **Science and Technology**
+   - **Physics**
+   - **Chemistry**
+   - **Biology**
+   - **Computer Science**
+   - **Engineering**
+
+2. **Mathematics**
+   - **Arithmetic**
+   - **Algebra**
+   - **Geometry**
+   - **Calculus**
+   - **Statistics**
+
+3. **Humanities and Social Sciences**
+   - **History**
+   - **Philosophy**
+   - **Psychology**
+   - **Sociology**
+   - **Economics**
+
+4. **Arts and Literature**
+   - **Literature**
+   - **Visual Arts**
+   - **Music**
+   - **Performing Arts**
+
+5. **Current Events and General Knowledge**
+
+6. **Languages and Communication**
+
+7. **Ethics and Morality**
+
+8. **Problem-Solving Skills**
+
+**Guidelines for Interaction**:
+
+- **Clarity**: Provide clear and understandable explanations.
+- **Conciseness**: Be concise and address the user's question directly.
+- **Neutrality**: Maintain an unbiased stance.
+- **Confidentiality**: Protect user privacy.
+
+This system message is consistent across all agents to optimize prompt caching.
+    """
+    return system_message
+
 class Agent:
     """
     Represents an agent that can perform various reasoning actions.
@@ -70,7 +126,7 @@ class Agent:
         """
         Initialize an agent with custom instructions.
         """
-        self.name = kwargs.get('name', 'Unnamed Agent')
+        self.name = kwargs.get('name', 'AI Assistant')
         self.color = color
         self.messages = []
         self.chat_history = []  # For chat mode
@@ -107,32 +163,40 @@ class Agent:
                     total_tokens = sum(len(encoding.encode(msg['content'])) for msg in self.chat_history)
         else:
             self.messages.append({"role": role, "content": content})
-            # Enforce a maximum message history length based on token count
+            # Enforce maximum token limit for message history
             try:
-                # Use a known encoding compatible with chat models
                 encoding = tiktoken.get_encoding("cl100k_base")
             except Exception as e:
                 logging.error(f"Error getting encoding: {e}")
                 raise e
             total_tokens = sum(len(encoding.encode(msg['content'])) for msg in self.messages)
             if total_tokens > MAX_TOTAL_TOKENS:
-                # Trim messages from the beginning, but keep the initial instruction
+                # Trim messages from the beginning
                 while total_tokens > MAX_TOTAL_TOKENS and len(self.messages) > 1:
-                    if self.messages[0]['content'] == self.system_purpose:
-                        # Keep the initial instruction message
-                        self.messages.pop(1)
-                    else:
-                        self.messages.pop(0)
+                    self.messages.pop(0)
                     total_tokens = sum(len(encoding.encode(msg['content'])) for msg in self.messages)
 
     def _handle_chat_response(self, prompt):
         """
         Handles the chat response for reasoning logic using o1-preview model.
         """
-        self._add_message("user", prompt)
+        # Use the shared system message
+        shared_system_message = get_shared_system_message()
 
-        # Prepare the messages array including the initial instruction and conversation history
-        messages = self.messages.copy()
+        # Build the agent-specific additions
+        agent_specific_message = self._build_agent_specific_message()
+
+        # Combine shared system message and agent-specific message
+        system_message = f"{shared_system_message}\n\n{agent_specific_message}"
+
+        # Prepare messages with static content at the beginning
+        messages = [{"role": "user", "content": system_message}]
+
+        # Add message history
+        messages.extend(self.messages)
+
+        # Add the dynamic prompt at the end
+        messages.append({"role": "user", "content": prompt})
 
         # Start timing
         start_time = time.time()
@@ -157,6 +221,17 @@ class Agent:
                 assistant_reply = response.choices[0].message.content.strip()
                 self._add_message("assistant", assistant_reply)
 
+                # Extract usage information
+                usage = response.usage
+                cached_tokens = usage.prompt_tokens_details.get('cached_tokens', 0)
+                reasoning_tokens = usage.completion_tokens_details.get('reasoning_tokens', 0)
+                total_tokens = usage.total_tokens
+                completion_tokens = usage.completion_tokens
+
+                # Display usage information
+                print(self.color + f"{self.name} used {cached_tokens} cached tokens out of {usage.prompt_tokens} prompt tokens." + Style.RESET_ALL)
+                print(self.color + f"{self.name} generated {completion_tokens} completion tokens, including {reasoning_tokens} reasoning tokens. Total tokens used: {total_tokens}." + Style.RESET_ALL)
+
                 return assistant_reply, duration
 
             except Exception as e:
@@ -176,13 +251,22 @@ class Agent:
         """
         Handles chat interaction with the agent using gpt-4o model.
         """
-        # Prepare the system message with agent's personality and quirks
-        system_message = self._build_system_message()
+        # Use the shared system message
+        shared_system_message = get_shared_system_message()
 
-        # Add system message at the beginning of the conversation
-        messages = [{"role": "system", "content": system_message}] + self.chat_history
+        # Build the agent-specific additions
+        agent_specific_message = self._build_agent_specific_message()
 
-        # Add user's message
+        # Combine shared system message and agent-specific message
+        system_message = f"{shared_system_message}\n\n{agent_specific_message}"
+
+        # Prepare messages with static content at the beginning
+        messages = [{"role": "user", "content": system_message}]
+
+        # Add conversation history
+        messages.extend(self.chat_history)
+
+        # Add the dynamic user message at the end
         messages.append({"role": "user", "content": user_message})
 
         # Start timing
@@ -208,6 +292,17 @@ class Agent:
                 assistant_reply = response.choices[0].message.content.strip()
                 self._add_message("assistant", assistant_reply, mode='chat')
 
+                # Extract usage information
+                usage = response.usage
+                cached_tokens = usage.prompt_tokens_details.get('cached_tokens', 0)
+                reasoning_tokens = usage.completion_tokens_details.get('reasoning_tokens', 0)
+                total_tokens = usage.total_tokens
+                completion_tokens = usage.completion_tokens
+
+                # Display usage information
+                print(self.color + f"{self.name} used {cached_tokens} cached tokens out of {usage.prompt_tokens} prompt tokens." + Style.RESET_ALL)
+                print(self.color + f"{self.name} generated {completion_tokens} completion tokens, including {reasoning_tokens} reasoning tokens. Total tokens used: {total_tokens}." + Style.RESET_ALL)
+
                 return assistant_reply, duration
 
             except Exception as e:
@@ -223,56 +318,41 @@ class Agent:
 
         return "An error occurred while generating a response.", time.time() - start_time
 
-    def _build_system_message(self):
+    def _build_agent_specific_message(self):
         """
-        Builds the system message incorporating the agent's personality and quirks,
-        as well as information about other agents.
+        Builds the agent-specific message incorporating the agent's personality traits and other attributes.
         """
+        # Build the base personality description
         personality_description = f"Your name is {self.name}. {self.system_purpose}"
 
-        # Include interaction style
-        if self.interaction_style:
-            interaction_details = "\n".join(f"{k.replace('_', ' ').title()}: {v}" for k, v in self.interaction_style.items())
-            personality_description += f"\n\nInteraction Style:\n{interaction_details}"
+        # Include all other attributes
+        attributes = [
+            ('Interaction Style', self.interaction_style),
+            ('Personality Traits', self.personality_traits),
+            ('Ethical Conduct', self.ethical_conduct),
+            ('Capabilities and Limitations', self.capabilities_limitations),
+            ('Context Awareness', self.context_awareness),
+            ('Adaptability and Engagement', self.adaptability_engagement),
+            ('Responsiveness', self.responsiveness),
+            ('Additional Tools and Modules', self.additional_tools_modules),
+        ]
 
-        # Include personality traits
-        if self.personality_traits:
-            personality_details = "\n".join(f"{k.replace('_', ' ').title()}: {v}" for k, v in self.personality_traits.items())
-            personality_description += f"\n\nPersonality Traits:\n{personality_details}"
-
-        # Include ethical conduct
-        if self.ethical_conduct:
-            ethical_details = "\n".join(f"{k.replace('_', ' ').title()}: {v}" for k, v in self.ethical_conduct.items())
-            personality_description += f"\n\nEthical Conduct:\n{ethical_details}"
-
-        # Include capabilities and limitations
-        if self.capabilities_limitations:
-            capabilities_details = "\n".join(f"{k.replace('_', ' ').title()}: {v}" for k, v in self.capabilities_limitations.items())
-            personality_description += f"\n\nCapabilities and Limitations:\n{capabilities_details}"
-
-        # Include context awareness
-        if self.context_awareness:
-            context_details = "\n".join(f"{k.replace('_', ' ').title()}: {v}" for k, v in self.context_awareness.items())
-            personality_description += f"\n\nContext Awareness:\n{context_details}"
-
-        # Include adaptability and engagement
-        if self.adaptability_engagement:
-            adaptability_details = "\n".join(f"{k.replace('_', ' ').title()}: {v}" for k, v in self.adaptability_engagement.items())
-            personality_description += f"\n\nAdaptability and Engagement:\n{adaptability_details}"
-
-        # Include responsiveness
-        if self.responsiveness:
-            responsiveness_details = "\n".join(f"{k.replace('_', ' ').title()}: {v}" for k, v in self.responsiveness.items())
-            personality_description += f"\n\nResponsiveness:\n{responsiveness_details}"
-
-        # Include additional tools and modules
-        if self.additional_tools_modules:
-            tools_details = "\n".join(f"{k.replace('_', ' ').title()}: {v}" for k, v in self.additional_tools_modules.items())
-            personality_description += f"\n\nAdditional Tools and Modules:\n{tools_details}"
+        for title, attr in attributes:
+            if attr:
+                details = "\n".join(f"{k.replace('_', ' ').title()}: {v}" for k, v in attr.items())
+                personality_description += f"\n\n{title}:\n{details}"
 
         # Include information about other agents
         if self.other_agents_info:
             personality_description += f"\n\nYou are aware of the following other agents:\n{self.other_agents_info}"
+
+        # Calculate and display the token count for agent-specific message
+        try:
+            encoding = tiktoken.get_encoding("cl100k_base")
+            token_count = len(encoding.encode(personality_description))
+            print(f"{self.color}{self.name}{Style.RESET_ALL} agent-specific message token count: {token_count}")
+        except Exception as e:
+            logging.error(f"Error calculating token count: {e}")
 
         return personality_description
 
@@ -314,6 +394,57 @@ class Agent:
         critique_prompt = f"Critique the following response for accuracy and completeness:\n\n{other_agent_response}"
         return self._handle_chat_response(critique_prompt)
 
+def initialize_agents():
+    """
+    Initializes agents based on the configurations loaded from the JSON file.
+    """
+    agents_data = load_agents_config()
+    agents = []
+    if not agents_data:
+        print(Fore.YELLOW + "No agents found in the configuration. Using default agents." + Style.RESET_ALL)
+        # Initialize default agents with specific attributes
+        agent_a_data = {
+            'name': 'Agent 47',
+            'system_purpose': 'You are a logical and analytical assistant.',
+            'personality': {'logical': 'Yes', 'analytical': 'Yes'},
+        }
+        agent_b_data = {
+            'name': 'Agent 74',
+            'system_purpose': 'You are a creative and empathetic assistant.',
+            'personality': {'creative': 'Yes', 'empathetic': 'Yes'},
+        }
+        agent_a = Agent(Fore.MAGENTA, **agent_a_data)
+        agent_b = Agent(Fore.CYAN, **agent_b_data)
+        agents = [agent_a, agent_b]
+    else:
+        print(Fore.YELLOW + "Available agents:" + Style.RESET_ALL)
+        for i, agent_data in enumerate(agents_data):
+            # Assign different colors to agents
+            agent_colors = [Fore.MAGENTA, Fore.CYAN, Fore.BLUE, Fore.GREEN, Fore.RED]
+            agent_color = agent_colors[i % len(agent_colors)]
+            name = agent_data.get('name', 'Unnamed Agent')
+            print(agent_color + f"- {name}" + Style.RESET_ALL)
+            agent = Agent(agent_color, **agent_data)
+            agents.append(agent)
+
+        # Set other agents' info for each agent
+        for agent in agents:
+            other_agents_info = ""
+            for other_agent in agents:
+                if other_agent.name != agent.name:
+                    # Build information about the other agent
+                    info = f"Name: {other_agent.name}"
+                    if other_agent.personality_traits:
+                        personality = ", ".join(f"{k.replace('_', ' ')}: {v}" for k, v in other_agent.personality_traits.items())
+                        info += f"\nPersonality Traits: {personality}"
+                    if other_agent.custom_instructions.get('quirks'):
+                        quirks = ", ".join(other_agent.custom_instructions['quirks'])
+                        info += f"\nQuirks: {quirks}"
+                    other_agents_info += f"\n\n{info}"
+            agent.other_agents_info = other_agents_info.strip()
+
+    return agents
+
 def blend_responses(agent_responses, user_prompt):
     """
     Combines multiple agent responses into a single, optimal response.
@@ -326,7 +457,9 @@ def blend_responses(agent_responses, user_prompt):
         str: The blended response.
     """
     combined_prompt = (
-        f"Combine the following responses into a single, optimal answer to the question: '{user_prompt}'.\n\n"
+        "Please combine the following responses into a single, optimal answer to the question.\n"
+        f"Question: '{user_prompt}'\n"
+        "Responses:\n"
         + "\n\n".join(f"Response from {agent_name}:\n{response}" for agent_name, response in agent_responses)
         + "\n\nProvide a concise and accurate combined response."
     )
@@ -334,9 +467,23 @@ def blend_responses(agent_responses, user_prompt):
     try:
         response = client.chat.completions.create(
             model="o1-preview-2024-09-12",
-            messages=[{"role": "user", "content": combined_prompt}]
+            messages=[
+                {"role": "user", "content": combined_prompt}
+            ]
         )
         blended_reply = response.choices[0].message.content.strip()
+
+        # Extract usage information
+        usage = response.usage
+        cached_tokens = usage.prompt_tokens_details.get('cached_tokens', 0)
+        reasoning_tokens = usage.completion_tokens_details.get('reasoning_tokens', 0)
+        total_tokens = usage.total_tokens
+        completion_tokens = usage.completion_tokens
+
+        # Display usage information
+        print(Fore.GREEN + f"Blending used {cached_tokens} cached tokens out of {usage.prompt_tokens} prompt tokens." + Style.RESET_ALL)
+        print(Fore.GREEN + f"Blending generated {completion_tokens} completion tokens, including {reasoning_tokens} reasoning tokens. Total tokens used: {total_tokens}." + Style.RESET_ALL)
+
         return blended_reply
     except Exception as e:
         logging.error(f"Error in blending responses: {e}")
@@ -369,9 +516,6 @@ def print_header(title, color=Fore.YELLOW):
 def process_agent_action(agent, action, *args, **kwargs):
     """
     Processes a specific action for an agent.
-
-    This function handles the execution of a reasoning step (e.g., 'discuss', 'verify', 'critique', 'refine')
-    for an agent. It ensures that the action is performed correctly and logs the duration.
 
     Args:
         agent (Agent): The agent performing the action.
@@ -443,50 +587,6 @@ def handle_special_commands(user_input, agents):
         return True
     return False  # No special command handled
 
-def initialize_agents():
-    """
-    Initializes agents based on the configurations loaded from the JSON file.
-
-    Returns:
-        list: List of Agent instances.
-    """
-    agents_data = load_agents_config()
-    agents = []
-    if not agents_data:
-        print(Fore.YELLOW + "No agents found in the configuration. Using default agents." + Style.RESET_ALL)
-        # Initialize default agents
-        agent_a = Agent(Fore.MAGENTA, name="Agent A")
-        agent_b = Agent(Fore.CYAN, name="Agent B")
-        agents = [agent_a, agent_b]
-    else:
-        print(Fore.YELLOW + "Available agents:" + Style.RESET_ALL)
-        for i, agent_data in enumerate(agents_data):
-            # Assign different colors to agents
-            agent_colors = [Fore.MAGENTA, Fore.CYAN, Fore.BLUE, Fore.GREEN, Fore.RED]
-            agent_color = agent_colors[i % len(agent_colors)]
-            name = agent_data.get('name', 'Unnamed Agent')
-            print(agent_color + f"- {name}" + Style.RESET_ALL)
-            agent = Agent(agent_color, **agent_data)
-            agents.append(agent)
-
-        # Set other agents' info for each agent
-        for agent in agents:
-            other_agents_info = ""
-            for other_agent in agents:
-                if other_agent.name != agent.name:
-                    # Build information about the other agent
-                    info = f"Name: {other_agent.name}"
-                    if other_agent.personality_traits:
-                        personality = ", ".join(f"{k.replace('_', ' ')}: {v}" for k, v in other_agent.personality_traits.items())
-                        info += f"\nPersonality Traits: {personality}"
-                    if other_agent.custom_instructions.get('quirks'):
-                        quirks = ", ".join(other_agent.custom_instructions['quirks'])
-                        info += f"\nQuirks: {quirks}"
-                    other_agents_info += f"\n\n{info}"
-            agent.other_agents_info = other_agents_info.strip()
-
-    return agents
-
 def chat_with_agents(agents):
     """
     Handles the chat mode where the user can chat with a selected agent.
@@ -534,188 +634,207 @@ def reasoning_logic(agents):
     Args:
         agents (list): List of Agent instances.
     """
-    # Get user input
-    print(Fore.YELLOW + "Please enter your prompt (or type 'exit' to quit): " + Style.RESET_ALL, end='')
-    user_prompt = input()
+    retain_context = True  # Default to retain context
+    while True:
+        # Get user input
+        print(Fore.YELLOW + "Please enter your prompt (or type 'exit' to quit): " + Style.RESET_ALL, end='')
+        user_prompt = input()
 
-    if user_prompt.strip().lower() == 'exit':
-        print(Fore.YELLOW + "Goodbye!" + Style.RESET_ALL)
-        exit(0)
+        if user_prompt.strip().lower() == 'exit':
+            print(Fore.YELLOW + "Exiting reasoning logic mode." + Style.RESET_ALL)
+            break
 
-    # Handle special commands
-    if handle_special_commands(user_prompt, agents):
-        return
-
-    # ------------------ Reasoning Step 1: Agents Discuss the Prompt ------------------
-    print_header("Reasoning Step 1: Discussing the Prompt")
-    opinions = {}
-    durations = {}
-
-    for agent in agents:
-        opinion, duration = process_agent_action(agent, 'discuss', user_prompt)
-        opinions[agent.name] = opinion
-        durations[agent.name] = duration
-
-    total_discussion_time = sum(durations.values())
-    print_divider()
-    print(Fore.YELLOW + f"Total discussion time: {total_discussion_time:.2f} seconds." + Style.RESET_ALL)
-
-    # ------------------ Reasoning Step 2: Agents Verify Their Responses ------------------
-    print_header("Reasoning Step 2: Verifying Responses")
-    verified_opinions = {}
-    verify_durations = {}
-
-    with ThreadPoolExecutor() as executor:
-        futures = {}
-        for agent in agents:
-            futures[executor.submit(process_agent_action, agent, 'verify', opinions[agent.name])] = agent
-
-        for future in futures:
-            agent = futures[future]
-            verified_opinion, duration = future.result()
-            verified_opinions[agent.name] = verified_opinion
-            verify_durations[agent.name] = duration
-
-    total_verification_time = sum(verify_durations.values())
-    print_divider()
-    print(Fore.YELLOW + f"Total verification time: {total_verification_time:.2f} seconds." + Style.RESET_ALL)
-
-    # ------------------ Reasoning Step 3: Agents Critique Each Other's Responses ------------------
-    print_header("Reasoning Step 3: Critiquing Responses")
-    critiques = {}
-    critique_durations = {}
-
-    # Agents critique each other's verified responses
-    num_agents = len(agents)
-    for i, agent in enumerate(agents):
-        other_agent = agents[(i + 1) % num_agents]  # Get the next agent in the list
-        critique, duration = process_agent_action(agent, 'critique', verified_opinions[other_agent.name])
-        critiques[agent.name] = critique
-        critique_durations[agent.name] = duration
-
-    total_critique_time = sum(critique_durations.values())
-    print_divider()
-    print(Fore.YELLOW + f"Total critique time: {total_critique_time:.2f} seconds." + Style.RESET_ALL)
-
-    # ------------------ Reasoning Step 4: Agents Refine Their Responses ------------------
-    print_header("Reasoning Step 4: Refining Responses")
-    refined_opinions = {}
-    refine_durations = {}
-
-    for agent in agents:
-        refined_opinion, duration = process_agent_action(agent, 'refine', opinions[agent.name])
-        refined_opinions[agent.name] = refined_opinion
-        refine_durations[agent.name] = duration
-
-    total_refinement_time = sum(refine_durations.values())
-    print_divider()
-    print(Fore.YELLOW + f"Total refinement time: {total_refinement_time:.2f} seconds." + Style.RESET_ALL)
-
-    # ------------------ Reasoning Step 5: Blending Refined Responses ------------------
-    print_header("Reasoning Step 5: Blending Responses")
-    agent_responses = [(agent.name, refined_opinions[agent.name]) for agent in agents]
-    start_blend_time = time.time()
-    optimal_response = blend_responses(agent_responses, user_prompt)
-    end_blend_time = time.time()
-    blend_duration = end_blend_time - start_blend_time
-
-    # Output the optimal response with enhanced formatting
-    print_divider()
-    print_header("Optimal Response")
-    print(Fore.GREEN + optimal_response + Style.RESET_ALL)
-    print_divider()
-
-    print(Fore.YELLOW + f"Response generated in {blend_duration:.2f} seconds." + Style.RESET_ALL)
-
-    # ------------------ Feedback Loop for Refinement ------------------
-    refine_count = 0
-    more_time = False
-    while refine_count < MAX_REFINEMENT_ATTEMPTS:
-        print(Fore.YELLOW + "\nWas this response helpful and accurate? (yes/no): " + Style.RESET_ALL, end='')
-        user_feedback = input().strip().lower()
-
-        if user_feedback == 'yes':
-            print(Fore.YELLOW + "Thank you for your feedback!" + Style.RESET_ALL)
-            break  # Exit the feedback loop
-        elif user_feedback != 'no':
-            print(Fore.YELLOW + "Please answer 'yes' or 'no'." + Style.RESET_ALL)
+        # Handle special commands
+        if handle_special_commands(user_prompt, agents):
             continue
 
-        # After the second "no," ask if the user wants the agents to take more time
-        refine_count += 1
-        if refine_count >= 2:
-            print(Fore.YELLOW + "Would you like the agents to take more time refining the response? (yes/no): " + Style.RESET_ALL, end='')
-            more_time_input = input().strip().lower()
-            more_time = more_time_input == 'yes'
+        # Enforce minimum prompt length
+        if len(user_prompt.strip()) <= 4:
+            print(Fore.YELLOW + "Your prompt must be more than 4 characters. Please try again." + Style.RESET_ALL)
+            continue
 
-        # Agents can try to improve the response
-        print(Fore.YELLOW + "We're sorry to hear that. Let's try to improve the response." + Style.RESET_ALL)
+        # ------------------ Reasoning Step 1: Agents Discuss the Prompt ------------------
+        print_header("Reasoning Step 1: Discussing the Prompt")
+        opinions = {}
+        durations = {}
 
-        # Agents refine their responses again
         for agent in agents:
-            refined_opinion, duration = process_agent_action(agent, 'refine', refined_opinions[agent.name], more_time=more_time)
+            opinion, duration = process_agent_action(agent, 'discuss', user_prompt)
+            opinions[agent.name] = opinion
+            durations[agent.name] = duration
+
+        total_discussion_time = sum(durations.values())
+        print_divider()
+        print(Fore.YELLOW + f"Total discussion time: {total_discussion_time:.2f} seconds." + Style.RESET_ALL)
+
+        # ------------------ Reasoning Step 2: Agents Verify Their Responses ------------------
+        print_header("Reasoning Step 2: Verifying Responses")
+        verified_opinions = {}
+        verify_durations = {}
+
+        with ThreadPoolExecutor() as executor:
+            futures = {}
+            for agent in agents:
+                futures[executor.submit(process_agent_action, agent, 'verify', opinions[agent.name])] = agent
+
+            for future in futures:
+                agent = futures[future]
+                verified_opinion, duration = future.result()
+                verified_opinions[agent.name] = verified_opinion
+                verify_durations[agent.name] = duration
+
+        total_verification_time = sum(verify_durations.values())
+        print_divider()
+        print(Fore.YELLOW + f"Total verification time: {total_verification_time:.2f} seconds." + Style.RESET_ALL)
+
+        # ------------------ Reasoning Step 3: Agents Critique Each Other's Responses ------------------
+        print_header("Reasoning Step 3: Critiquing Responses")
+        critiques = {}
+        critique_durations = {}
+
+        # Agents critique each other's verified responses
+        num_agents = len(agents)
+        for i, agent in enumerate(agents):
+            other_agent = agents[(i + 1) % num_agents]  # Get the next agent in the list
+            critique, duration = process_agent_action(agent, 'critique', verified_opinions[other_agent.name])
+            critiques[agent.name] = critique
+            critique_durations[agent.name] = duration
+
+        total_critique_time = sum(critique_durations.values())
+        print_divider()
+        print(Fore.YELLOW + f"Total critique time: {total_critique_time:.2f} seconds." + Style.RESET_ALL)
+
+        # ------------------ Reasoning Step 4: Agents Refine Their Responses ------------------
+        print_header("Reasoning Step 4: Refining Responses")
+        refined_opinions = {}
+        refine_durations = {}
+
+        for agent in agents:
+            refined_opinion, duration = process_agent_action(agent, 'refine', opinions[agent.name])
             refined_opinions[agent.name] = refined_opinion
-            refine_durations[agent.name] += duration  # Accumulate duration
+            refine_durations[agent.name] = duration
 
         total_refinement_time = sum(refine_durations.values())
         print_divider()
         print(Fore.YELLOW + f"Total refinement time: {total_refinement_time:.2f} seconds." + Style.RESET_ALL)
 
-        # Blend refined responses again
-        print_divider()
-        print_header("Blending Refined Responses")
+        # ------------------ Reasoning Step 5: Blending Refined Responses ------------------
+        print_header("Reasoning Step 5: Blending Responses")
         agent_responses = [(agent.name, refined_opinions[agent.name]) for agent in agents]
         start_blend_time = time.time()
         optimal_response = blend_responses(agent_responses, user_prompt)
         end_blend_time = time.time()
         blend_duration = end_blend_time - start_blend_time
 
-        # Output the new optimal response with enhanced formatting
+        # Output the optimal response with enhanced formatting
         print_divider()
-        print_header("New Optimal Response")
+        print_header("Optimal Response")
         print(Fore.GREEN + optimal_response + Style.RESET_ALL)
         print_divider()
 
         print(Fore.YELLOW + f"Response generated in {blend_duration:.2f} seconds." + Style.RESET_ALL)
-    else:
-        print(Fore.YELLOW + "Maximum refinement attempts reached." + Style.RESET_ALL)
 
-    # ------------------ Asking to Retain Context ------------------
-    retain_context = ask_retain_context()
+        # ------------------ Feedback Loop for Refinement ------------------
+        refine_count = 0
+        more_time = False
+        while refine_count < MAX_REFINEMENT_ATTEMPTS:
+            print(Fore.YELLOW + "\nWas this response helpful and accurate? (yes/no): " + Style.RESET_ALL, end='')
+            user_feedback = input().strip().lower()
 
-    if not retain_context:
-        # Clear agents' message histories
-        for agent in agents:
-            agent.messages = []
-        print(Fore.YELLOW + "Conversation context has been reset." + Style.RESET_ALL)
-    else:
-        print(Fore.YELLOW + "Conversation context has been retained for the next prompt." + Style.RESET_ALL)
+            if user_feedback == 'yes':
+                print(Fore.YELLOW + "Thank you for your feedback!" + Style.RESET_ALL)
+                break  # Exit the feedback loop
+            elif user_feedback != 'no':
+                print(Fore.YELLOW + "Please answer 'yes' or 'no'." + Style.RESET_ALL)
+                continue
+
+            # After the second "no," ask if the user wants the agents to take more time
+            refine_count += 1
+            if refine_count >= 2:
+                print(Fore.YELLOW + "Would you like the agents to take more time refining the response? (yes/no): " + Style.RESET_ALL, end='')
+                more_time_input = input().strip().lower()
+                more_time = more_time_input == 'yes'
+
+            # Agents can try to improve the response
+            print(Fore.YELLOW + "We're sorry to hear that. Let's try to improve the response." + Style.RESET_ALL)
+
+            # Agents refine their responses again
+            for agent in agents:
+                refined_opinion, duration = process_agent_action(agent, 'refine', refined_opinions[agent.name], more_time=more_time)
+                refined_opinions[agent.name] = refined_opinion
+                refine_durations[agent.name] += duration  # Accumulate duration
+
+            total_refinement_time = sum(refine_durations.values())
+            print_divider()
+            print(Fore.YELLOW + f"Total refinement time: {total_refinement_time:.2f} seconds." + Style.RESET_ALL)
+
+            # Blend refined responses again
+            print_divider()
+            print_header("Blending Refined Responses")
+            agent_responses = [(agent.name, refined_opinions[agent.name]) for agent in agents]
+            start_blend_time = time.time()
+            optimal_response = blend_responses(agent_responses, user_prompt)
+            end_blend_time = time.time()
+            blend_duration = end_blend_time - start_blend_time
+
+            # Output the new optimal response with enhanced formatting
+            print_divider()
+            print_header("New Optimal Response")
+            print(Fore.GREEN + optimal_response + Style.RESET_ALL)
+            print_divider()
+
+            print(Fore.YELLOW + f"Response generated in {blend_duration:.2f} seconds." + Style.RESET_ALL)
+        else:
+            print(Fore.YELLOW + "Maximum refinement attempts reached." + Style.RESET_ALL)
+
+        # ------------------ Asking to Retain Context ------------------
+        print(Fore.YELLOW + "Would you like to retain this conversation context for the next prompt? (yes/no): " + Style.RESET_ALL, end='')
+        retain_context_input = input().strip().lower()
+        if retain_context_input != 'yes':
+            # Clear agents' message histories
+            for agent in agents:
+                agent.messages = []
+            print(Fore.YELLOW + "Conversation context has been reset." + Style.RESET_ALL)
+        else:
+            print(Fore.YELLOW + "Conversation context has been retained for the next prompt." + Style.RESET_ALL)
 
 def main_menu():
     """
     Displays the main menu and handles user selection.
     """
     agents = initialize_agents()
+    current_mode = None  # Tracks the current mode ('chat' or 'reasoning')
 
     while True:
-        print_divider()
-        print_header("Multi-Agent Reasoning Chatbot")
-        print(Fore.YELLOW + "Please select an option:" + Style.RESET_ALL)
-        print("1. Chat with an agent")
-        print("2. Use reasoning logic")
-        print("3. Exit")
-        print(Fore.YELLOW + "Enter your choice (1/2/3): " + Style.RESET_ALL, end='')
-        choice = input().strip()
+        if current_mode is None:
+            print_divider()
+            print_header("Multi-Agent Reasoning Chatbot")
+            print(Fore.YELLOW + "Please select an option:" + Style.RESET_ALL)
+            print("1. Chat with an agent")
+            print("2. Use reasoning logic")
+            print("3. Exit")
+            while True:
+                print(Fore.YELLOW + "Enter your choice (1/2/3): " + Style.RESET_ALL, end='')
+                choice = input().strip()
+                if choice in ['1', '2', '3']:
+                    break
+                else:
+                    print(Fore.YELLOW + "Invalid choice. Please enter 1, 2, or 3." + Style.RESET_ALL)
 
-        if choice == '1':
+            if choice == '1':
+                current_mode = 'chat'
+            elif choice == '2':
+                current_mode = 'reasoning'
+            elif choice == '3':
+                print(Fore.YELLOW + "Goodbye!" + Style.RESET_ALL)
+                exit(0)
+
+        if current_mode == 'chat':
             chat_with_agents(agents)
-        elif choice == '2':
+            current_mode = None  # Reset to show menu again
+        elif current_mode == 'reasoning':
             reasoning_logic(agents)
-        elif choice == '3':
-            print(Fore.YELLOW + "Goodbye!" + Style.RESET_ALL)
-            exit(0)
-        else:
-            print(Fore.YELLOW + "Invalid choice. Please enter 1, 2, or 3." + Style.RESET_ALL)
+            current_mode = None  # Reset to show menu again
 
 # Main script
 if __name__ == "__main__":
