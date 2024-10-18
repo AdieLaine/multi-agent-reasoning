@@ -70,15 +70,12 @@ Users can also **chat with individual agents**. Agents are aware of each other, 
 
 ## Prerequisites
 
-- **Python 3.7** or higher
+- **Python 3.10** or higher
 - **OpenAI Python Library** (compatible with the models used)
 - **colorama** library for colored console output
 - **tiktoken** library for accurate token counting
 - **Swarm** library for agent coordination
-  - Install Swarm:
-    ```bash
-    pip install swarm
-    ```
+
 
 ## Installation
 
@@ -97,9 +94,18 @@ Users can also **chat with individual agents**. Agents are aware of each other, 
 3. **Install the required packages**:
 
    ```bash
-   pip install openai colorama tiktoken swarm
+   pip install openai colorama tiktoken
    ```
+    Install Swarm:
+    ```bash
+    pip install git+ssh://git@github.com/openai/swarm.git
 
+    or
+
+    pip install git+https://github.com/openai/swarm.git
+    ```
+    Refer to Swarm's [GitHub repository](https://github.com/openai/swarm) for detailed installation instructions.
+    
 4. **Set your OpenAI API key**:
 
    Set your API key as an environment variable:
