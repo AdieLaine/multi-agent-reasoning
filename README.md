@@ -1,6 +1,6 @@
 # Multi-Agent Reasoning
 
-A Python-based solution that employs **Multi-Agent Reasoning**, where multiple AI agents collaborate to generate optimal responses to user prompts. By simulating interactions between agents, the system enhances reasoning capabilities to deliver accurate and refined answers. Custom agents can be added via JSON, allowing you to customize their personalities, interaction styles, and more. The system leverages **Prompt Caching** to optimize performance and reduce latency and costs for repeated prompts.
+A Python-based solution that employs **Multi-Agent Reasoning**, where multiple AI agents collaborate to generate optimal responses to user prompts. By simulating interactions between agents and integrating the **Swarm Framework for Intelligence**, the system enhances reasoning capabilities to deliver accurate and refined answers. Custom agents can be added via JSON, allowing you to customize their personalities, interaction styles, and more. The system leverages **Prompt Caching** to optimize performance and reduce latency and costs for repeated prompts.
 
 ---
 
@@ -19,19 +19,19 @@ A Python-based solution that employs **Multi-Agent Reasoning**, where multiple A
 - [Agents' Reasoning and Chat Process](#agents-reasoning-and-chat-process)
   - [Chat Mode](#chat-mode)
   - [Reasoning Logic Mode](#reasoning-logic-mode)
-    - [Step 1: Initial Discussion](#step-1-initial-discussion)
-    - [Step 2: Verification](#step-2-verification)
-    - [Step 3: Critiquing](#step-3-critiquing)
-    - [Step 4: Refinement](#step-4-refinement)
-    - [Step 5: Response Blending](#step-5-response-blending)
-    - [Step 6: User Feedback Loop](#step-6-user-feedback-loop)
-    - [Step 7: Context Retention](#step-7-context-retention)
-- [Prompt Caching](#prompt-caching)
+- [Swarm Integration](#swarm-integration)
   - [Overview](#overview-1)
   - [How It Works](#how-it-works)
-  - [Monitoring Cache Usage](#monitoring-cache-usage)
+  - [Swarm-Based Reasoning](#swarm-based-reasoning)
+  - [Swarm Chat Interface](#swarm-chat-interface)
   - [Best Practices](#best-practices)
   - [Frequently Asked Questions](#frequently-asked-questions)
+- [Prompt Caching](#prompt-caching)
+  - [Overview](#overview-2)
+  - [How It Works](#how-it-works-1)
+  - [Monitoring Cache Usage](#monitoring-cache-usage)
+  - [Best Practices](#best-practices-1)
+  - [Frequently Asked Questions](#frequently-asked-questions-1)
 - [Use of JSON Configuration File](#use-of-json-configuration-file)
 - [Code Logic Explanation](#code-logic-explanation)
 - [Visual Flow of the Reasoning Process](#visual-flow-of-the-reasoning-process)
@@ -46,14 +46,18 @@ A Python-based solution that employs **Multi-Agent Reasoning**, where multiple A
 
 The **Multi-Agent Reasoning** script creates an interactive chatbot experience where multiple AI agents collaborate through a structured reasoning process to provide optimal answers. Each agent brings unique perspectives and expertise, and through iterative steps of discussion, verification, critique, and refinement, they converge on a high-quality, accurate response.
 
-Additionally, the system allows users to **chat with individual agents**. Agents are aware of each other, including their personalities and quirks, and can answer questions about one another, providing a rich and interactive experience.
+Additionally, the system integrates the **Swarm Framework for Intelligence** to enhance collaboration among agents. Swarm allows agents to coordinate efficiently, leveraging collective intelligence to solve complex tasks.
+
+Users can also **chat with individual agents**. Agents are aware of each other, including their personalities and quirks, and can answer questions about one another, providing a rich and interactive experience.
 
 ## Features
 
 - **Multi-Agent Collaboration**: Simulates collaborative reasoning between multiple agents.
+- **Swarm Framework Integration**: Enhances agent coordination and execution through Swarm's lightweight and scalable framework.
 - **Agent Awareness**: Agents are aware of each other, including their personalities, quirks, and capabilities.
 - **Chat with Individual Agents**: Users can choose to chat directly with individual agents, engaging in personalized conversations.
 - **Structured Reasoning Process**: Agents engage in a multi-step process including discussion, verification, critique, and refinement.
+- **Swarm-Based Reasoning**: Utilizes Swarm for dynamic agent handoffs and function execution.
 - **Iterative Refinement**: Agents improve responses through multiple iterations, enhancing accuracy and completeness.
 - **Response Blending**: Combines refined responses into a single, optimal answer.
 - **User Feedback Loop**: Incorporates user feedback for further refinement.
@@ -70,6 +74,11 @@ Additionally, the system allows users to **chat with individual agents**. Agents
 - **OpenAI Python Library** (compatible with the models used)
 - **colorama** library for colored console output
 - **tiktoken** library for accurate token counting
+- **Swarm** library for agent coordination
+  - Install Swarm:
+    ```bash
+    pip install swarm
+    ```
 
 ## Installation
 
@@ -88,7 +97,7 @@ Additionally, the system allows users to **chat with individual agents**. Agents
 3. **Install the required packages**:
 
    ```bash
-   pip install openai colorama tiktoken
+   pip install openai colorama tiktoken swarm
    ```
 
 4. **Set your OpenAI API key**:
@@ -112,14 +121,15 @@ python reasoning.py
 Upon running the script, you will be presented with a menu:
 
 ```
-════════════════════════════════════════════════════════════════════════════════════════
-║                        Multi-Agent Reasoning Chatbot                               ║
-════════════════════════════════════════════════════════════════════════════════════════
+═════════════════════════════════════════════════════════════════════════════════════════════
+║                        Multi-Agent Reasoning Chatbot                                   ║
+═════════════════════════════════════════════════════════════════════════════════════════════
 Please select an option:
 1. Chat with an agent
 2. Use reasoning logic
-3. Exit
-Enter your choice (1/2/3):
+3. Use Swarm-based reasoning
+4. Exit
+Enter your choice (1/2/3/4):
 ```
 
 - **Option 1: Chat with an agent**
@@ -133,7 +143,13 @@ Enter your choice (1/2/3):
   - Engages the agents in a collaborative reasoning process to answer your prompt.
   - Follows the structured multi-step process to generate an optimal response.
 
-- **Option 3: Exit**
+- **Option 3: Use Swarm-based reasoning**
+
+  - Utilizes **Swarm Framework for Intelligence** to coordinate agents for handling your prompt.
+  - Agents collaborate using Swarm's framework, enhancing responsiveness and flexibility.
+  - Agents can dynamically hand off tasks to specialized agents.
+
+- **Option 4: Exit**
 
   - Exits the application.
 
@@ -143,6 +159,7 @@ The Multi-Agent Reasoning system uses specific OpenAI models:
 
 - **Reasoning Logic**: Uses the `o1-preview-2024-09-12` model for reasoning tasks.
 - **Chat Interactions**: Uses the `gpt-4o` model for chat interactions with agents.
+- **Swarm Agents**: Swarm can utilize any appropriate model as configured, defaulting to `gpt-4o`.
 
 These models support advanced features and token usage reporting, allowing the system to provide detailed token usage information after each response.
 
@@ -270,6 +287,149 @@ The core of the chatbot's functionality lies in the reasoning process employed b
 
 - **User**: "What about the challenges?"
 - **Agents**, with context retained, understand that the user refers to challenges related to renewable energy.
+
+---
+
+## Swarm Integration
+
+### Overview
+
+**Swarm Integration** enhances the Multi-Agent Reasoning system by enabling dynamic agent coordination and task delegation. Swarm allows agents to collaborate efficiently, leveraging collective intelligence to solve complex tasks and improve responsiveness.
+
+Swarm focuses on making agent coordination and execution lightweight, highly controllable, and easily testable. It achieves this through two primitive abstractions: **Agents** and **Handoffs**. An Agent encompasses instructions and tools and can, at any point, choose to hand off a conversation to another Agent.
+
+![Swarm Integration](img/swarm.png)
+
+### How It Works
+
+- **Swarm Client Initialization**: The system initializes a Swarm client to manage agent interactions.
+
+  ```python
+  from swarm import Agent, Swarm
+  client = Swarm()
+  ```
+
+- **Agent Initialization**:
+  - Agents are initialized using the Swarm framework, incorporating their configurations from `agents.json`.
+  - Each agent has a unique set of instructions and is aware of other agents' capabilities.
+  - Agents can define functions that return other agents, enabling dynamic handoffs.
+
+- **Conversation Handling**:
+  - Swarm manages the conversation flow, agent selection, and function execution.
+  - Agents can execute functions or hand off tasks to specialized agents based on the conversation context.
+
+### Swarm-Based Reasoning
+
+**Objective**: Utilize **Swarm Framework for Intelligence** to coordinate agents dynamically, allowing for efficient collaboration and task delegation.
+
+#### Steps
+
+1. **Initialization**:
+   - Load and initialize agents from the `agents.json` configuration file.
+   - Agents are aware of each other and their respective capabilities.
+
+2. **Discussion**:
+   - Each agent provides their initial response to the user prompt using Swarm's `client.run()` method.
+   - Responses are collected and displayed with agent-specific colors for clarity.
+
+3. **Verification**:
+   - Agents verify the accuracy of their responses.
+   - Verified responses are collected for further processing.
+
+4. **Critiquing**:
+   - Agents critique each other's verified responses.
+   - Critiques are collected to identify areas for improvement.
+
+5. **Refinement**:
+   - Agents refine their responses based on critiques.
+   - Refined responses are collected for blending.
+
+6. **Blending Responses**:
+   - Swarm coordinates the blending of agents' refined responses into a cohesive final answer using the `blend_responses` function.
+   - A dedicated Swarm agent (e.g., "Swarm Agent") can be used to perform the blending.
+
+*Example*:
+
+- **User Prompt**: "Explain the impact of artificial intelligence on society."
+- **Swarm Agents**:
+  - **Agent 47**: Discusses logical implications, ethical considerations.
+  - **Agent 74**: Explores creative advancements and future possibilities.
+- **Swarm Coordination**:
+  - Agents verify and critique each other's responses.
+  - Swarm blends the responses into a comprehensive answer.
+- **Final Response**: A detailed explanation covering ethical, societal, technological, and future impact aspects of AI on society.
+
+### Swarm Chat Interface
+
+**Objective**: Provide a chat interface that leverages Swarm's capabilities for seamless agent interaction.
+
+- **Swarm Agent for Chat**:
+  - A dedicated Swarm agent is configured for chat interactions.
+  - This agent manages the conversation, utilizing other agents as needed.
+
+- **Conversation Handling**:
+
+  ```python
+  def swarm_chat_interface(conversation_history):
+      # Load Swarm agent's configuration
+      swarm_agent = ...  # Initialize Swarm agent
+      messages = [{"role": "system", "content": swarm_agent.instructions}]
+      messages.extend(conversation_history)
+      response = client.run(agent=swarm_agent, messages=messages)
+      swarm_reply = response.messages[-1]['content'].strip()
+      return swarm_reply
+  ```
+
+- **Dynamic Responses**:
+  - The Swarm agent can delegate parts of the conversation to other agents or functions.
+  - Ensures that user queries are handled by the most suitable agent.
+
+*Example*:
+
+- **User**: "I need help resetting my password."
+- **Swarm Agent**: Recognizes the need for technical assistance.
+  - Delegates the task to a specialized support agent.
+- **Support Agent**: Provides step-by-step instructions to reset the password.
+- **Swarm Agent**: Ensures the conversation remains seamless and contextually relevant.
+
+### Best Practices
+
+- **Agent Design**:
+  - Define clear instructions and capabilities for each agent.
+  - Ensure agents have unique roles and expertise to avoid redundancy.
+
+- **Function Definitions**:
+  - Use functions to enable agents to perform specific tasks or hand off to other agents.
+  - Functions should return meaningful results or agents for handoffs.
+
+- **Context Variables**:
+  - Utilize context variables to share information between agents and functions.
+  - Helps maintain conversation context and user-specific data.
+
+- **Error Handling**:
+  - Implement robust error handling in functions and agent interactions.
+  - Ensure agents can recover gracefully from exceptions.
+
+- **Testing**:
+  - Test agents individually and in collaboration to ensure desired behaviors.
+  - Use Swarm's REPL or logging to monitor agent interactions and performance.
+
+### Frequently Asked Questions
+
+- **What is Swarm, and how does it enhance the system?**
+  - Swarm is a framework for agent coordination and execution, making interactions lightweight and scalable. It enables dynamic agent handoffs and function execution.
+
+- **Do I need to modify my existing agents to work with Swarm?**
+  - Agents should be defined as Swarm `Agent` instances. Existing agents can be adapted by incorporating Swarm's structure and conventions.
+
+- **Can I add more agents to the Swarm system?**
+  - Yes. You can define additional agents in the `agents.json` file and initialize them in the system.
+
+- **How does Swarm handle agent handoffs?**
+  - Agents can define functions that return other agents. When a function returns another agent, Swarm handles the handoff, and the new agent takes over the conversation.
+
+- **Is Swarm compatible with the models used in the system?**
+  - Yes. Swarm can utilize any appropriate model configured in the agents, defaulting to `gpt-4o`.
 
 ---
 
@@ -401,6 +561,17 @@ Agents are configured via an `agents.json` file, allowing easy customization of 
           "interaction_style_with_humor": "Playful",
           "quirks": ["Uses metaphors"]
         }
+      },
+      {
+        "name": "Swarm Agent",
+        "system_purpose": "You are a collaborative AI assistant composed of multiple expert agents. You coordinate tasks among agents to provide comprehensive and accurate responses.",
+        "interaction_style": { ... },
+        "personality": {
+          "coordinator": "Yes",
+          "collaborative": "Yes",
+          "personality_traits": ["Organized", "Facilitator"],
+          "quirks": ["Ensures all perspectives are considered"]
+        }
       }
     ]
   }
@@ -415,85 +586,126 @@ Agents are configured via an `agents.json` file, allowing easy customization of 
 *Example*:
 
 - **User**: "Do you work with another agent?"
-- **Agent 47**: "Yes, I collaborate with Agent 74, who is creative and empathetic. Together, we provide comprehensive insights."
+- **Agent 47**: "Yes, I collaborate with Agent 74 and the Swarm Agent. Together, we provide comprehensive insights."
 
 ## Code Logic Explanation
 
-The code is structured to facilitate both the reasoning process and chat interactions with agents.
+The code is structured to facilitate both the reasoning process and chat interactions with agents. It also incorporates **Swarm Framework** for enhanced agent coordination.
 
 ### Imports and Initialization
 
 - **Libraries**:
-  - `os`, `time`, `logging`: For system operations, timing, and logging.
-  - `concurrent.futures.ThreadPoolExecutor`: For parallel processing.
+  - `os`, `time`, `logging`, `json`: For system operations, timing, logging, and JSON handling.
   - `colorama`: For colored console output.
-  - `tiktoken`: For accurate token counting.
-  - `openai.OpenAI`: To interact with OpenAI's API.
-
+  - `swarm`: For implementing Swarm Intelligence.
+  - `tiktoken`: For accurate token counting (in other parts of the script).
 - **Initialization**:
-  - Colorama is initialized.
-  - Logging is configured to output to both console and file.
-  - OpenAI client is initialized with the API key.
-  - Constants are defined for token limits (`MAX_TOTAL_TOKENS`, `MAX_CHAT_HISTORY_TOKENS`), retry attempts, and refinement attempts.
+  - Colorama is initialized for color formatting in the console.
+  - Logging is configured with custom formatting for both console and file outputs.
+  - The Swarm client is initialized to manage agent interactions.
 
-### Agent Class
+  ```python
+  from swarm import Agent, Swarm
+  client = Swarm()
+  ```
 
-**Modifications**:
+### Agent Initialization
 
-- **Attributes**:
+- Agents are initialized from the `agents.json` configuration file.
+- Each agent is created as a Swarm `Agent` instance with specific instructions and attributes.
+- Agents are made aware of each other by appending information about other agents to their instructions.
 
-  - `other_agents_info`: Stores information about other agents, making each agent aware of others.
-  - `system_message`: Each agent builds its own system message upon initialization, incorporating its unique `system_purpose` and personality traits.
+  ```python
+  def initialize_swarm_agents():
+      # Load agents from agents.json and create Swarm agents
+      agents = []
+      # ... Load and initialize agents with awareness of others
+      return agents
+  ```
 
-- **Methods**:
+### Swarm Chat Interface
 
-  - `_build_system_message()`: Constructs the agent-specific system message, including personality traits and information about other agents.
-  - `_add_message()`: Manages message history, ensuring token limits are not exceeded by trimming older messages while preserving essential context.
-  - `_handle_chat_response()`: Handles the reasoning logic interactions using the `o1-preview-2024-09-12` model, including token usage extraction and display.
-  - `_handle_chat_interaction()`: Handles the chat interaction logic using the `gpt-4o` model, including token usage extraction and display.
-  - `discuss()`, `verify()`, `critique()`, `refine()`: Methods supporting the reasoning process.
-  - **Prompt Caching Awareness**: Agents' methods leverage prompt caching to optimize performance and reduce costs.
+- **Function**: `swarm_chat_interface(conversation_history)`
+- **Purpose**: Handles chat interactions with the Swarm agent.
+- **Process**:
+  - Loads the Swarm agent configuration.
+  - Prepares the conversation history, including the system message.
+  - Uses the Swarm client to process the conversation.
+  - Returns the Swarm agent's response.
 
-### Main Workflow
+  ```python
+  def swarm_chat_interface(conversation_history):
+      # Prepare messages
+      messages = [{"role": "system", "content": swarm_agent.instructions}]
+      messages.extend(conversation_history)
+      # Run Swarm client
+      response = client.run(agent=swarm_agent, messages=messages)
+      swarm_reply = response.messages[-1]['content'].strip()
+      return swarm_reply
+  ```
 
-- **Main Menu**: Presents options to chat with an agent or use reasoning logic.
-- **Chat Mode**:
+### Swarm-Based Reasoning Logic
 
-  - User selects an agent to chat with.
-  - Agents can answer questions about themselves and other agents.
-  - Conversation history is maintained, with the option to clear it.
-  - Token usage is displayed after each agent response.
-  - **Prompt Caching**: Frequently used prompts in chat may benefit from caching.
+- **Function**: `run_swarm_reasoning(user_prompt)`
+- **Purpose**: Uses Swarm agents to collaborate and respond to a user prompt following multiple reasoning stages.
+- **Process**:
+  1. **Discussion**:
+     - Each agent provides their initial response to the prompt.
+     - Responses are collected and displayed with agent-specific colors for clarity.
+  2. **Verification**:
+     - Agents verify the accuracy of their responses.
+     - Verified responses are collected.
+  3. **Critiquing**:
+     - Agents critique each other's verified responses.
+     - Critiques are collected.
+  4. **Refinement**:
+     - Agents refine their responses based on critiques.
+     - Refined responses are collected.
+  5. **Blending**:
+     - The `blend_responses` function combines the refined responses into a final answer.
+     - The final blended response is displayed.
 
-- **Reasoning Logic Mode**:
+- **Parallel Processing**: Swarm allows agents to perform these steps concurrently, enhancing efficiency.
 
-  - Agents proceed through the structured reasoning steps to generate an optimal response to the user's prompt.
-  - Token usage is displayed after each step.
-  - **Prompt Caching**: Common prompt prefixes in reasoning steps can be cached for efficiency.
+- **Example of Blending Function**:
+
+  ```python
+  def blend_responses(agent_responses, user_prompt):
+      # Prepare combined prompt
+      combined_prompt = ...
+      # Initialize Blender agent
+      blender_agent = Agent(
+          name="Swarm Agent",
+          instructions="You are a collaborative AI assistant composed of multiple expert agents."
+      )
+      # Run blending process
+      response = client.run(agent=blender_agent, messages=[{"role": "user", "content": combined_prompt}])
+      blended_reply = response.messages[-1]['content']
+      return blended_reply
+  ```
+
+### Interface Functions
+
+- **`swarm_middle_agent_interface(user_prompt)`**:
+  - Serves as the interface for initiating Swarm-based reasoning from the main script.
+  - Calls `run_swarm_reasoning` with the user's prompt.
+- **`swarm_chat_interface(conversation_history)`**:
+  - Handles Swarm-based chat interactions.
+  - Can be called from the main script when Swarm chat is needed.
 
 ### Error Handling and Logging
 
-- **Retry Mechanism**:
-
-  - Implements retries with exponential backoff in case of API failures.
-  - Prevents the application from crashing due to transient errors.
-
-- **Error Logging**:
-
-  - Detailed error messages are logged to assist with debugging.
-
-### Preventing Errors Related to Message Roles
-
-- **Message Role Adjustment**:
-
-  - The `system_message` is added with a `role` of `"user"` instead of `"system"` to prevent errors with models that do not support the `'system'` role.
-  - Ensures compatibility with the models used (`o1-preview-2024-09-12` and `gpt-4o`).
+- **Logging Levels**:
+  - Information about agents' actions, Swarm operations, and errors are logged.
+- **Error Handling**:
+  - Try-except blocks are used to catch and log exceptions.
+  - Ensures that errors do not crash the application and provides meaningful feedback.
 
 ---
 
 ## Visual Flow of the Reasoning Process
 
-Below is an updated flowchart reflecting the new logic, including the chat mode, agents' awareness of each other, token usage transparency, and prompt caching:
+Below is an updated flowchart reflecting the new logic, including the chat mode, agents' awareness of each other, token usage transparency, prompt caching, and Swarm integration:
 
 ![Reasoning Process Flowchart](img/reasoningflow.png)
 
@@ -529,7 +741,8 @@ To prepare the GitHub repository:
 
    ```gitignore
    # Exclude log files
-   assistant.log
+   reasoning.log
+   swarm_middle_agent.log
 
    # Exclude environment files
    .env
@@ -547,6 +760,7 @@ To prepare the GitHub repository:
 multi-agent-reasoning/
 ├── README.md
 ├── reasoning.py
+├── swarm_middle_agent.py
 ├── agents.json
 ├── LICENSE
 ├── .gitignore
@@ -555,6 +769,7 @@ multi-agent-reasoning/
     ├── reasoningflow.png
     ├── agents.png
     └── promptcache.png
+    └── swarm.png
 ```
 
 ---

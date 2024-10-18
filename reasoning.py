@@ -8,17 +8,62 @@ from colorama import init, Fore, Style
 import tiktoken  # For accurate token counting
 from openai import OpenAI
 
+from swarm_middle_agent import (
+    swarm_middle_agent_interface,
+    swarm_chat_interface
+)  # Import the Swarm interfaces
+
 # Initialize colorama
 init(autoreset=True)
 
-# Configure logging
+# Custom Formatter for Logging
+class ColoredFormatter(logging.Formatter):
+    # Colors for log levels
+    LEVEL_COLORS = {
+        logging.DEBUG: Fore.LIGHTYELLOW_EX,
+        logging.INFO: Fore.WHITE,  # Default to white for INFO
+        logging.WARNING: Fore.YELLOW,
+        logging.ERROR: Fore.RED,
+        logging.CRITICAL: Fore.RED + Style.BRIGHT,
+    }
+
+    # Specific coloring for messages containing certain keywords
+    KEYWORD_COLORS = {
+        'HTTP Request': Fore.LIGHTYELLOW_EX,  # Use Fore.LIGHTYELLOW_EX to avoid conflict
+    }
+
+    def format(self, record):
+        message = super().format(record)
+
+        # Check for specific keywords to apply color
+        for keyword, color in self.KEYWORD_COLORS.items():
+            if keyword in message:
+                return color + message + Style.RESET_ALL
+
+        # Otherwise, color based on the log level
+        color = self.LEVEL_COLORS.get(record.levelno, Fore.WHITE)
+        return color + message + Style.RESET_ALL
+
+# Remove existing handlers
+for handler in logging.root.handlers[:]:
+    logging.root.removeHandler(handler)
+
+# Create a console handler with the custom formatter
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_formatter = ColoredFormatter('%(asctime)s %(levelname)s:%(message)s')
+console_handler.setFormatter(console_formatter)
+
+# Create a file handler without colors
+file_handler = logging.FileHandler("reasoning.log")
+file_handler.setLevel(logging.INFO)
+file_formatter = logging.Formatter('%(asctime)s %(levelname)s:%(message)s')
+file_handler.setFormatter(file_formatter)
+
+# Configure the root logger
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s %(levelname)s:%(message)s',
-    handlers=[
-        logging.FileHandler("assistant.log"),
-        logging.StreamHandler()
-    ]
+    handlers=[console_handler, file_handler],
 )
 
 # Initialize the OpenAI client
@@ -43,7 +88,6 @@ def load_agents_config():
     try:
         with open(AGENTS_CONFIG_FILE, 'r', encoding='utf-8') as f:
             agents_data = json.load(f)
-        # Confirm successful loading
         print(Fore.YELLOW + f"Successfully loaded agents configuration from '{AGENTS_CONFIG_FILE}'." + Style.RESET_ALL)
         return agents_data.get('agents', [])
     except FileNotFoundError:
@@ -132,15 +176,16 @@ class Agent:
         self.chat_history = []  # For chat mode
         self.lock = None
         self.system_purpose = kwargs.get('system_purpose', '')
-        self.personality_traits = kwargs.get('personality', {})
-        self.interaction_style = kwargs.get('interaction_style', {})
-        self.ethical_conduct = kwargs.get('ethical_conduct', {})
-        self.capabilities_limitations = kwargs.get('capabilities_limitations', {})
-        self.context_awareness = kwargs.get('context_awareness', {})
-        self.adaptability_engagement = kwargs.get('adaptability_engagement', {})
-        self.responsiveness = kwargs.get('responsiveness', {})
-        self.additional_tools_modules = kwargs.get('additional_tools_modules', {})
-        self.custom_instructions = kwargs  # Store all other custom instructions
+        # Build the agent's instructions by incorporating traits
+        additional_attributes = {k: v for k, v in kwargs.items() if k not in ['name', 'system_purpose', 'color']}
+        # Build the full instructions
+        self.instructions = self.system_purpose
+        for attr_name, attr_value in additional_attributes.items():
+            if isinstance(attr_value, dict):
+                details = "\n".join(f"{k.replace('_', ' ').title()}: {v}" for k, v in attr_value.items())
+                self.instructions += f"\n\n{attr_name.replace('_', ' ').title()}:\n{details}"
+            else:
+                self.instructions += f"\n\n{attr_name.replace('_', ' ').title()}: {attr_value}"
         self.other_agents_info = ""  # Will be set after all agents are initialized
 
     def _add_message(self, role, content, mode='reasoning'):
@@ -183,11 +228,8 @@ class Agent:
         # Use the shared system message
         shared_system_message = get_shared_system_message()
 
-        # Build the agent-specific additions
-        agent_specific_message = self._build_agent_specific_message()
-
-        # Combine shared system message and agent-specific message
-        system_message = f"{shared_system_message}\n\n{agent_specific_message}"
+        # Combine shared system message and agent-specific instructions
+        system_message = f"{shared_system_message}\n\n{self.instructions}"
 
         # Prepare messages with static content at the beginning
         messages = [{"role": "user", "content": system_message}]
@@ -254,11 +296,8 @@ class Agent:
         # Use the shared system message
         shared_system_message = get_shared_system_message()
 
-        # Build the agent-specific additions
-        agent_specific_message = self._build_agent_specific_message()
-
-        # Combine shared system message and agent-specific message
-        system_message = f"{shared_system_message}\n\n{agent_specific_message}"
+        # Combine shared system message and agent-specific instructions
+        system_message = f"{shared_system_message}\n\n{self.instructions}"
 
         # Prepare messages with static content at the beginning
         messages = [{"role": "user", "content": system_message}]
@@ -318,44 +357,6 @@ class Agent:
 
         return "An error occurred while generating a response.", time.time() - start_time
 
-    def _build_agent_specific_message(self):
-        """
-        Builds the agent-specific message incorporating the agent's personality traits and other attributes.
-        """
-        # Build the base personality description
-        personality_description = f"Your name is {self.name}. {self.system_purpose}"
-
-        # Include all other attributes
-        attributes = [
-            ('Interaction Style', self.interaction_style),
-            ('Personality Traits', self.personality_traits),
-            ('Ethical Conduct', self.ethical_conduct),
-            ('Capabilities and Limitations', self.capabilities_limitations),
-            ('Context Awareness', self.context_awareness),
-            ('Adaptability and Engagement', self.adaptability_engagement),
-            ('Responsiveness', self.responsiveness),
-            ('Additional Tools and Modules', self.additional_tools_modules),
-        ]
-
-        for title, attr in attributes:
-            if attr:
-                details = "\n".join(f"{k.replace('_', ' ').title()}: {v}" for k, v in attr.items())
-                personality_description += f"\n\n{title}:\n{details}"
-
-        # Include information about other agents
-        if self.other_agents_info:
-            personality_description += f"\n\nYou are aware of the following other agents:\n{self.other_agents_info}"
-
-        # Calculate and display the token count for agent-specific message
-        try:
-            encoding = tiktoken.get_encoding("cl100k_base")
-            token_count = len(encoding.encode(personality_description))
-            print(f"{self.color}{self.name}{Style.RESET_ALL} agent-specific message token count: {token_count}")
-        except Exception as e:
-            logging.error(f"Error calculating token count: {e}")
-
-        return personality_description
-
     def discuss(self, prompt):
         """
         Agent formulates a response to the user's prompt.
@@ -400,6 +401,8 @@ def initialize_agents():
     """
     agents_data = load_agents_config()
     agents = []
+    agent_data_dict = {}  # Map agent names to their data
+
     if not agents_data:
         print(Fore.YELLOW + "No agents found in the configuration. Using default agents." + Style.RESET_ALL)
         # Initialize default agents with specific attributes
@@ -420,28 +423,39 @@ def initialize_agents():
         print(Fore.YELLOW + "Available agents:" + Style.RESET_ALL)
         for i, agent_data in enumerate(agents_data):
             # Assign different colors to agents
-            agent_colors = [Fore.MAGENTA, Fore.CYAN, Fore.BLUE, Fore.GREEN, Fore.RED]
-            agent_color = agent_colors[i % len(agent_colors)]
+            agent_colors = {
+                "Agent 47": Fore.MAGENTA,
+                "Agent 74": Fore.CYAN,
+                "Swarm Agent": Fore.LIGHTGREEN_EX,
+            }
+            agent_color = agent_colors.get(agent_data.get('name', 'Unnamed Agent'), Fore.WHITE)
             name = agent_data.get('name', 'Unnamed Agent')
             print(agent_color + f"- {name}" + Style.RESET_ALL)
             agent = Agent(agent_color, **agent_data)
             agents.append(agent)
+            agent_data_dict[name] = agent_data  # Store agent_data for later use
 
         # Set other agents' info for each agent
         for agent in agents:
             other_agents_info = ""
             for other_agent in agents:
                 if other_agent.name != agent.name:
-                    # Build information about the other agent
                     info = f"Name: {other_agent.name}"
-                    if other_agent.personality_traits:
-                        personality = ", ".join(f"{k.replace('_', ' ')}: {v}" for k, v in other_agent.personality_traits.items())
-                        info += f"\nPersonality Traits: {personality}"
-                    if other_agent.custom_instructions.get('quirks'):
-                        quirks = ", ".join(other_agent.custom_instructions['quirks'])
-                        info += f"\nQuirks: {quirks}"
+                    # Get agent_data for other_agent
+                    other_agent_data = agent_data_dict[other_agent.name]
+                    # Include system purpose and other traits
+                    system_purpose = other_agent_data.get('system_purpose', '')
+                    info += f"\nSystem Purpose: {system_purpose}"
+                    other_attributes = {k: v for k, v in other_agent_data.items() if k not in ['name', 'system_purpose']}
+                    for attr_name, attr_value in other_attributes.items():
+                        if isinstance(attr_value, dict):
+                            details = "\n".join(f"{k.replace('_', ' ').title()}: {v}" for k, v in attr_value.items())
+                            info += f"\n{attr_name.replace('_', ' ').title()}:\n{details}"
+                        else:
+                            info += f"\n{attr_name.replace('_', ' ').title()}: {attr_value}"
                     other_agents_info += f"\n\n{info}"
-            agent.other_agents_info = other_agents_info.strip()
+            # Append information about other agents to the agent's instructions
+            agent.instructions += f"\n\nYou are aware of the following other agents:\n{other_agents_info.strip()}"
 
     return agents
 
@@ -607,7 +621,7 @@ def chat_with_agents(agents):
             selected_agent = agents[int(selection) - 1]
             break
         else:
-            print(Fore.YELLOW + "Invalid selection. Please enter a valid agent number." + Style.RESET_ALL)
+            print(Fore.YELLOW + f"Invalid selection. Please enter a number between 1 and {len(agents)}." + Style.RESET_ALL)
 
     print(Fore.YELLOW + f"Starting chat with {selected_agent.color}{selected_agent.name}{Style.RESET_ALL}. Type 'exit' to return to the main menu.")
 
@@ -803,7 +817,7 @@ def main_menu():
     Displays the main menu and handles user selection.
     """
     agents = initialize_agents()
-    current_mode = None  # Tracks the current mode ('chat' or 'reasoning')
+    current_mode = None  # Tracks the current mode ('chat', 'reasoning', or 'swarm')
 
     while True:
         if current_mode is None:
@@ -812,20 +826,23 @@ def main_menu():
             print(Fore.YELLOW + "Please select an option:" + Style.RESET_ALL)
             print("1. Chat with an agent")
             print("2. Use reasoning logic")
-            print("3. Exit")
+            print("3. Use Swarm-based reasoning")  # Swarm integration
+            print("4. Exit")
             while True:
-                print(Fore.YELLOW + "Enter your choice (1/2/3): " + Style.RESET_ALL, end='')
+                print(Fore.YELLOW + "Enter your choice (1/2/3/4): " + Style.RESET_ALL, end='')
                 choice = input().strip()
-                if choice in ['1', '2', '3']:
+                if choice in ['1', '2', '3', '4']:
                     break
                 else:
-                    print(Fore.YELLOW + "Invalid choice. Please enter 1, 2, or 3." + Style.RESET_ALL)
+                    print(Fore.YELLOW + "Invalid choice. Please enter 1, 2, 3, or 4." + Style.RESET_ALL)
 
             if choice == '1':
                 current_mode = 'chat'
             elif choice == '2':
                 current_mode = 'reasoning'
             elif choice == '3':
+                current_mode = 'swarm'
+            elif choice == '4':
                 print(Fore.YELLOW + "Goodbye!" + Style.RESET_ALL)
                 exit(0)
 
@@ -834,6 +851,15 @@ def main_menu():
             current_mode = None  # Reset to show menu again
         elif current_mode == 'reasoning':
             reasoning_logic(agents)
+            current_mode = None  # Reset to show menu again
+        elif current_mode == 'swarm':
+            # Prompt user for Swarm reasoning
+            print(Fore.YELLOW + "Enter your reasoning prompt for Swarm (or type 'exit' to quit): " + Style.RESET_ALL, end='')
+            user_prompt = input().strip()
+            if user_prompt.lower() == 'exit':
+                current_mode = None  # Reset to show menu again
+                continue
+            swarm_middle_agent_interface(user_prompt)
             current_mode = None  # Reset to show menu again
 
 # Main script
