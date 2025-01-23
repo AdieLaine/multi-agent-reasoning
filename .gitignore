@@ -163,3 +163,5 @@ cython_debug/
 
 # Local Files
 assistant.log
+reasoning_history.json
+swarm_reasoning_history.json
